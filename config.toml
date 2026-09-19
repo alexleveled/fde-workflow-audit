@@ -1,0 +1,73 @@
+# FDE Audit — capture pipeline config (Phase 1)
+# All paths are resolved relative to `data_dir` unless absolute.
+
+[capture]
+interval_seconds = 5          # main loop tick
+idle_threshold_seconds = 60   # no input longer than this => idle
+idle_heartbeat_seconds = 60   # while idle/stale, force at most one metadata row per this many seconds
+passive_reading = true        # tag "no input but foreground app present & under grace" as passive, not hard-idle
+passive_grace_seconds = 300   # foreground present + no input under this window => passive (reading), still counts as work
+active_monitor_only = true    # capture only the monitor holding the foreground window (multi-monitor = later)
+
+[image]
+format = "jpeg"               # "jpeg" (Pillow) or "png" (mss fallback)
+jpeg_quality = 80
+# Near-duplicate detection: coarse grayscale downsample of the raw pixel buffer.
+dupe_hash_size = 16           # thumbnail edge (NxN grayscale) used for the average-hash
+dupe_hamming_threshold = 6    # <= this many differing bits => treated as a duplicate (skip new image)
+
+[analysis]
+# Sessionization (multi-signal). A new window-session starts on any of: app
+# change, title/URL change, a large frame_hash jump, an idle gap, or the cap.
+session_max_minutes = 10        # N-minute cap so no summary spans hours
+session_idle_gap_seconds = 30   # gap between consecutive work frames past this => new session
+session_hash_jump_bits = 40     # frame_hash hamming distance > this (same app/title) => new session
+long_session_minutes = 20       # sessions >= this get start/mid/end vision reads; shorter get one
+max_titles_per_session = 6      # distinct titles/domains recorded per session
+# Transition mining (free, no model).
+pingpong_min_switches = 4       # A-B-A-B run needs >= this many switches to flag as manual-transfer
+ngram_top = 10                  # top app-switch bigrams to report
+ritual_min_days = 2             # a recurring app trigram must appear on >= this many days
+# Observations ledger.
+observation_confirm = 3         # >= this many occurrences flips an observation to 'confirmed'
+
+[digest]
+# The Phase 4 cadence report (model-free Markdown over the observations ledger).
+default_period = "weekly"       # cadence label stamped on generated digests
+top_focus = 3                   # # of "recommended focus" actions surfaced at the top
+# loaded_hourly_rate = 75       # if set, weekly hours are dollarized (hours x rate) — the
+                                # "minutes x people x loaded rate" figure; left unset by default
+
+[paths]
+data_dir = "./digest_data"    # root for db + screenshots
+db_file = "digest.db"         # relative to data_dir
+screenshots_dir = "screenshots"  # relative to data_dir
+pause_file = "PAUSE"          # touch this file (in data_dir) to suspend capture
+
+[monitor]
+# Real-time capture liveness (the dashboard "Live capture" panel + `fde_audit status`).
+# A machine counts as "capturing" if its most recent frame is within this window.
+# Leave unset to auto-derive from the capture cadence (idle_heartbeat*1.5 + interval,
+# min 90s) so an idle-but-running machine — which only writes ~1 row/min — never
+# reads as stopped. Set explicitly to override.
+# live_window_seconds = 90
+sweep_seconds = 30            # how often the dashboard re-checks liveness and logs up/down changes
+
+[retention]
+screenshot_days = 14          # `fde_audit prune` deletes image files older than this; metadata kept forever
+
+[privacy]
+# Case-insensitive substring matches. A hit => metadata-only row, no screenshot.
+app_denylist = ["1password", "keepass", "bitwarden", "lastpass"]
+title_denylist = ["password", "banking", "sign in", "log in", "credit card"]
+
+[identity]
+# The department label for this machine's employee. Two ways it's used:
+#   * `fde_audit person add` default when --dept is omitted.
+#   * Fleet auto-enrollment fallback: `capture start` (with no --person) reads the
+#     employee's department live from Active Directory; if the box is off-domain or
+#     AD has no `department` set, it falls back to THIS value. So to roll out to a
+#     department, set this to e.g. "Finance", package the app with this config, and
+#     hand it to IT to push — no per-employee `person add`, no config editing on
+#     their side.
+default_department = "developer"

@@ -1,0 +1,16 @@
+# Local capture data — screenshots never leave the machine (local-only raw).
+digest_data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+build/
+dist/
+
+# Demo workspace built by scripts/seed_demo.py
+demo/

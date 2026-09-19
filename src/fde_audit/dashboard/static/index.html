@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FDE Audit — Dashboard</title>
+<script>
+  // apply the saved theme before first paint to avoid a flash
+  // (?theme=light|dark overrides, e.g. for sharing a themed link)
+  const t = new URLSearchParams(location.search).get("theme") || localStorage.getItem("theme");
+  if (t) document.documentElement.setAttribute("data-theme", t);
+</script>
+<link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+<link rel="stylesheet" href="/static/styles.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1><img src="/static/logo.svg" alt="" class="logo">FDE Audit</h1>
+    <span class="sub" id="scopeLabel"></span>
+  </div>
+  <label><span class="lab-cap">Department</span> <select id="deptSel"></select></label>
+  <label><span class="lab-cap">Person</span> <select id="personSel"></select></label>
+  <label><span class="lab-cap">Period</span>
+    <select id="periodSel">
+      <option value="1d">Last 24h</option>
+      <option value="7d" selected>Last 7 days</option>
+      <option value="30d">Last 30 days</option>
+      <option value="90d">Last 90 days</option>
+      <option value="all">All time</option>
+    </select>
+  </label>
+  <button type="button" class="live-pill" id="liveDot" aria-pressed="true" title="Live updates on — data streams in as it lands. Click to pause."><span class="ld"></span><span class="ld-lbl">Live</span></button>
+  <button class="btn" id="refreshBtn" title="Reload data">Refresh</button>
+  <button class="btn btn-icon" id="themeBtn" title="Toggle theme">◐</button>
+  <button class="btn" id="panelBtn" title="Show / hide the Run analysis panel">Analysis<span
+      class="badge warn" id="panelBadge" hidden></span><span class="pulse-dot" id="panelPulse" hidden></span></button>
+</header>
+
+<nav class="sidebar" aria-label="Main">
+  <a class="nav-item" href="#/overview" data-view="overview">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span class="lbl">Overview</span></a>
+  <a class="nav-item" href="#/fleet" data-view="fleet">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg>
+    <span class="lbl">Fleet</span><span class="nav-dot" id="fleetNavDot" hidden></span></a>
+  <a class="nav-item" href="#/activity" data-view="activity">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V10"/><path d="M12 20V4"/><path d="M18 20v-6"/><path d="M3 20h18"/></svg>
+    <span class="lbl">Activity</span></a>
+  <a class="nav-item" href="#/opportunities" data-view="opportunities">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.3c.6.6 1 1.1 1 1.7h6c0-.6.4-1.1 1-1.7A6 6 0 0 0 12 3z"/></svg>
+    <span class="lbl">Opportunities</span></a>
+  <a class="nav-item" href="#/runs" data-view="runs">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+    <span class="lbl">Runs</span></a>
+  <a class="nav-item" href="#/reports" data-view="reports">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+    <span class="lbl">Reports</span></a>
+  <a class="nav-item" href="#/help" data-view="help">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.4 2.3c-.8.3-.9 1-.9 1.7"/><path d="M12 17h.01"/></svg>
+    <span class="lbl">Help</span></a>
+  <button class="nav-collapse" id="navCollapse" title="Collapse sidebar" aria-label="Collapse sidebar">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    <span class="lbl">Collapse</span></button>
+  <div class="foot">local · private · no cloud</div>
+</nav>
+
+<main>
+  <!-- Overview -->
+  <section class="view" id="view-overview" hidden>
+    <div class="view-head"><h2>Overview</h2><span class="desc">capture and analysis at a glance</span></div>
+    <a class="live-band" id="liveBand" href="#/fleet" hidden></a>
+    <div class="tiles" id="tiles"></div>
+    <div class="grid2">
+      <div class="card">
+        <div class="card-header"><h3>Time by app</h3><a class="spacer" href="#/activity" style="font-size:12px">Details →</a></div>
+        <div id="appsMini"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Daily activity</h3></div>
+        <div class="card-sub">Work vs idle minutes per day, over the selected period</div>
+        <div id="daysMini"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Fleet (real-time capture status) -->
+  <section class="view" id="view-fleet" hidden>
+    <div class="view-head"><h2>Fleet</h2><span class="desc">real-time capture status across machines</span></div>
+    <div class="card">
+      <div class="card-header"><h3>Live capture</h3>
+        <span class="spacer muted" id="fleetUpdated" style="font-size:12px"></span></div>
+      <div class="card-sub">A machine is <strong>capturing</strong> if it wrote a frame within the live
+        window. An idle-but-running machine still heartbeats, so it stays green.</div>
+      <div id="fleetDevices"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Status log</h3>
+        <span class="spacer muted" style="font-size:12px">every up / down change, newest first</span></div>
+      <div class="table-wrap" id="statusLog"></div>
+    </div>
+  </section>
+
+  <!-- Activity -->
+  <section class="view" id="view-activity" hidden>
+    <div class="view-head"><h2>Activity</h2><span class="desc">where the captured time went</span></div>
+    <div class="card">
+      <div class="card-header"><h3>Time by app</h3></div>
+      <div id="appsFull"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Daily activity</h3></div>
+      <div class="card-sub">Work vs idle minutes per day, over the selected period</div>
+      <div id="daysFull"></div>
+    </div>
+  </section>
+
+  <!-- Opportunities -->
+  <section class="view" id="view-opportunities" hidden>
+    <div class="view-head"><h2>Opportunities</h2><span class="desc">ranked improvement suggestions from the analysis</span></div>
+    <div class="card">
+      <div class="card-header"><h3>Improvement suggestions</h3><span class="spacer muted" id="oppTotals" style="font-size:12px"></span></div>
+      <div class="table-wrap" id="oppTable"></div>
+    </div>
+    <div class="card" id="consolidationCard" hidden>
+      <div class="card-header"><h3>Consolidation candidates</h3></div>
+      <div class="table-wrap" id="consolidation"></div>
+    </div>
+  </section>
+
+  <!-- Runs -->
+  <section class="view" id="view-runs" hidden>
+    <div class="view-head"><h2>Analysis runs</h2><span class="desc">each vision-labeling pass over captured frames</span></div>
+    <div class="card detail-pane" id="runDetail" hidden>
+      <div class="card-header"><h3 id="runDetailTitle"></h3>
+        <button class="btn btn-sm spacer" id="runDetailClose">Back to list</button></div>
+      <div class="table-wrap" id="runDetailBody"></div>
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="runs"></div>
+    </div>
+  </section>
+
+  <!-- Reports -->
+  <section class="view" id="view-reports" hidden>
+    <div class="view-head"><h2>Saved reports</h2><span class="desc">data reports and executive briefs (digests)</span></div>
+    <div class="card detail-pane" id="digestDetail" hidden>
+      <div class="card-header"><h3 id="digestDetailTitle"></h3>
+        <button class="btn btn-sm spacer" id="digestDetailClose">Back to list</button></div>
+      <div class="md" id="digestDetailBody"></div>
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="digests"></div>
+    </div>
+  </section>
+
+  <!-- Help -->
+  <section class="view" id="view-help" hidden>
+    <div class="view-head"><h2>Help</h2><span class="desc">how to run the app and get an improvement report</span></div>
+
+    <div class="card help">
+      <div class="card-header"><h3>What this app does</h3></div>
+      <p>FDE Audit watches your own work — it screenshots your active window every few
+        seconds into a <strong>local SQLite database</strong> (nothing leaves your machine, no API
+        key, no cloud). Claude Code then looks at those screenshots, labels what you were doing,
+        and prices <strong>improvement opportunities</strong> — things worth automating,
+        consolidating, or eliminating, each with an estimated reclaimable minutes-per-week.
+        This dashboard is the window over that database.</p>
+    </div>
+
+    <div class="card help">
+      <div class="card-header"><h3>Starting the app — two commands, two terminals</h3></div>
+      <p>The recorder and the dashboard are <strong>separate processes</strong>. Open two terminals
+        in the project folder:</p>
+      <div class="help-cmd">
+        <div class="t">Terminal 1 — record your work (leave it running; Ctrl+C stops it)</div>
+        <div class="cmd-line">
+          <pre>.\.venv\Scripts\fde_audit.exe capture start</pre>
+          <button class="copy-btn" data-copy=".\.venv\Scripts\fde_audit.exe capture start" title="Copy to clipboard" aria-label="Copy command">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="help-cmd">
+        <div class="t">Terminal 2 — serve this dashboard</div>
+        <div class="cmd-line">
+          <pre>.\.venv\Scripts\fde_audit.exe dashboard</pre>
+          <button class="copy-btn" data-copy=".\.venv\Scripts\fde_audit.exe dashboard" title="Copy to clipboard" aria-label="Copy command">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          </button>
+        </div>
+        <div class="t">then open <code>http://127.0.0.1:8787</code> in a browser.</div>
+      </div>
+      <p class="muted">The dashboard on its own captures nothing — it only reads the database and
+        triggers analysis steps. While the recorder runs, the <strong>Awaiting analysis</strong>
+        tile on Overview counts up as new frames land (hit Refresh to re-query).</p>
+    </div>
+
+    <div class="card help">
+      <div class="card-header"><h3>Getting an improvement report — the 4-step loop</h3></div>
+      <p>Everything happens in the <strong>Run analysis</strong> panel (the Analysis button in the
+        top bar opens it). Steps 1 and 3 are buttons here; steps 2 and 4 are done in Claude Code —
+        that's where the AI lives.</p>
+      <ol>
+        <li><strong>Prepare vision analysis</strong> (button) — bundles the frames not yet analyzed
+          into a packet. Instant, no model.</li>
+        <li><strong>Label in Claude Code</strong> — open Claude Code and say:
+          <code>“Label and commit the prepared analysis packet.”</code> Claude reads the
+          screenshots and writes labeled sessions and priced opportunities into the database.</li>
+        <li><strong>Compile report + brief packet</strong> (button) — ranks the opportunities into
+          a saved data report (see <a href="#/reports">Reports</a>) and bundles a brief packet for
+          the selected period. Instant, no model.</li>
+        <li><strong>Write brief in Claude Code</strong> — say:
+          <code>“Write the executive brief from the prepared brief packet.”</code> The narrative
+          brief (themes, tools worth building, licenses to cut) lands under
+          <a href="#/reports">Reports</a>.</li>
+      </ol>
+      <p class="muted">Repeat the loop whenever “Awaiting analysis” has piled up; re-run steps 3–4
+        any time you want a fresh brief for the selected period.</p>
+    </div>
+
+    <div class="card help">
+      <div class="card-header"><h3>The pages</h3></div>
+      <ul class="help-pages">
+        <li><strong><a href="#/overview">Overview</a></strong> — capture and analysis at a glance:
+          work/idle time, frames awaiting analysis, reclaimable minutes per week.</li>
+        <li><strong><a href="#/activity">Activity</a></strong> — where the captured time went:
+          time by app and per-day work minutes.</li>
+        <li><strong><a href="#/opportunities">Opportunities</a></strong> — the ranked improvement
+          ledger with weekly cost, status, and evidence counts.</li>
+        <li><strong><a href="#/runs">Runs</a></strong> — each vision-labeling pass; click a run to
+          see the sessions it labeled.</li>
+        <li><strong><a href="#/reports">Reports</a></strong> — saved data reports and executive
+          briefs; click one to read it.</li>
+      </ul>
+    </div>
+
+    <div class="card help">
+      <div class="card-header"><h3>Tips</h3></div>
+      <ul class="help-pages">
+        <li>The <strong>Department / Person / Period</strong> filters in the top bar scope every
+          page. Picking a department views the whole team; picking a person clears the department.</li>
+        <li><strong>◐</strong> toggles light/dark theme; your choice is remembered.</li>
+        <li>The <strong>Analysis</strong> button shows a badge when frames are waiting and a pulse
+          while a job is running.</li>
+        <li>Sensitive apps (password managers, banking) are denylisted — only metadata is recorded
+          for them, never images.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<!-- Run-analysis pipeline panel -->
+<aside class="action-panel" id="actionPanel" aria-label="Run analysis">
+  <div class="panel-head">
+    <h3>Run analysis</h3>
+    <button class="btn btn-sm" id="panelClose" title="Hide panel">×</button>
+  </div>
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <div class="step-title"><span class="stepn">1</span> Prepare vision analysis</div>
+      <div class="step-desc">Bundles the captured frames not yet analyzed into a packet. Model-free and
+        instant — the result appears in the job log below. Note: the <em>new</em> counter clears when
+        step 2 commits the labels, not here (and keeps growing while capture is running).</div>
+      <div class="step-act">
+        <button class="btn" data-action="prepare"
+          title="Bundle unanalyzed frames into a packet for step 2. The count shown is frames captured since the last COMMITTED analysis — it clears after step 2, not after this button.">
+          Prepare <span class="badge warn" id="prepBadge" hidden></span></button>
+        <label class="check-row" title="Normally only frames captured since the last analysis are bundled. Tick to re-bundle every frame, even ones already analyzed.">
+          <input type="checkbox" id="allFrames"> all frames
+        </label>
+      </div>
+    </div>
+    <div class="pipeline-step pipeline-step--manual">
+      <div class="step-title"><span class="stepn">2</span> Label in Claude Code <span class="manual-chip">manual</span>
+        <span class="badge ok" id="pendingChip" hidden
+          title="Packets prepared by step 1 that Claude Code has not committed yet. This clears (and the ‘new’ counter resets) once you run step 2."></span></div>
+      <div class="step-desc">This is where the AI happens. Open Claude Code and say:
+        <code>“Label and commit the prepared analysis packet.”</code>
+        Claude reads the screenshots and writes labeled sessions and priced opportunities into the database.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-title"><span class="stepn">3</span> Compile report + brief packet</div>
+      <div class="step-desc">Ranks the opportunities into a saved data report, then bundles a brief packet
+        for the selected period. Model-free and instant.</div>
+      <div class="step-act"><button class="btn btn-primary" data-action="compile">Compile</button></div>
+    </div>
+    <div class="pipeline-step pipeline-step--manual">
+      <div class="step-title"><span class="stepn">4</span> Write brief in Claude Code <span class="manual-chip">manual</span></div>
+      <div class="step-desc">Open Claude Code and say:
+        <code>“Write the executive brief from the prepared brief packet.”</code>
+        The narrative report lands under Saved reports.</div>
+    </div>
+  </div>
+
+  <details class="adv">
+    <summary>Advanced — run the compile halves separately</summary>
+    <div class="adv-row"><button class="btn btn-sm" data-action="rollup">Rollup</button>
+      <span class="d">rebuild the per-app usage rollup from frame metadata</span></div>
+    <div class="adv-row"><button class="btn btn-sm" data-action="digest">Data report</button>
+      <span class="d">rank + save the opportunity data report only</span></div>
+    <div class="adv-row"><button class="btn btn-sm" data-action="brief">Brief packet</button>
+      <span class="d">bundle the brief packet only (uses the Period selector)</span></div>
+  </details>
+
+  <details class="howto">
+    <summary>Full walkthrough — how do I get an improvement report?</summary>
+    <ol>
+      <li><strong>Capture your screen</strong> — in a terminal, from the project folder, run
+        <code>.\.venv\Scripts\fde_audit.exe capture start</code> and leave it running (Ctrl+C stops it).
+        Screenshots land in the database in real time; the <strong>Awaiting analysis</strong> tile on
+        Overview counts the frames not yet analyzed.</li>
+      <li><strong>Step 1 — Prepare vision analysis</strong> — bundles the new frames into a packet
+        (no AI model needed). The job log below prints the exact commit command for the next step.</li>
+      <li><strong>Step 2 — label it in Claude Code</strong> — <em>this is where the AI does its
+        improvement-finding.</em> Say: <code>“Label and commit the prepared analysis packet.”</code>
+        Claude looks at the screenshots with vision, works out what you were doing and where time is
+        being lost, and writes the labeled sessions and priced improvement opportunities into the
+        database. Everything after this step is arithmetic over what Claude wrote here.</li>
+      <li><strong>Step 3 — Compile report + brief packet</strong> — two instant, model-free processes.
+        First it ranks the opportunities into a <strong>data report</strong> (weekly cost, evidence,
+        consolidation candidates), saved under <strong>Reports</strong>. Then it bundles the ledger plus
+        the selected period's activity into a <strong>brief packet</strong> for the next step.</li>
+      <li><strong>Step 4 — have Claude Code write the brief</strong> — the narrative report: themes,
+        custom apps worth building, licenses to cut, next steps. Say:
+        <code>“Write the executive brief from the prepared brief packet.”</code> Claude writes the
+        Markdown and commits it, saving it under <strong>Reports</strong> (period <code>exec-…</code>).</li>
+    </ol>
+    <p class="muted">Where the AI happens: steps 2 and 4 (in Claude Code, no API key). Steps 1 and 3 are
+      instant bookkeeping. Repeat the loop whenever “Awaiting analysis” has piled up; re-run steps 3–4
+      whenever you want a fresh brief for the selected period.</p>
+  </details>
+
+  <div class="joblog" id="joblog"><h4>Job log</h4></div>
+</aside>
+
+<!-- toast stack (capture up/down notifications) -->
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+</body>
+</html>

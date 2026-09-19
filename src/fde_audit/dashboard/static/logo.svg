@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="FDE Audit logo">
+  <!-- FDE Audit — an eye whose pupil is a forward chevron: a forward deployed engineer's eyes. -->
+  <defs>
+    <clipPath id="eye"><path d="M10 64 Q64 16 118 64 Q64 112 10 64 Z"/></clipPath>
+  </defs>
+  <g fill="none" stroke="#0e7490" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- iris, clipped by the eyelids -->
+    <circle cx="64" cy="64" r="27" clip-path="url(#eye)"/>
+    <!-- pupil: forward chevron -->
+    <polyline points="58 52 73 64 58 76"/>
+    <!-- almond eye outline (drawn last so the lids stay crisp) -->
+    <path d="M10 64 Q64 16 118 64 Q64 112 10 64 Z"/>
+  </g>
+</svg>

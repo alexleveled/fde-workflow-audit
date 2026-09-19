@@ -1,0 +1,2 @@
+# Numbered migration files (NNNN_name.sql) go here. The base schema lives in
+# schema.sql and is applied first; migrations layer changes on top.

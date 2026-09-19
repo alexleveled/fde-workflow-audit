@@ -1,0 +1,922 @@
+<title>FDE Audit — How It Works</title>
+<style>
+  :root {
+    --paper: #FBFCFD;
+    --ink: #1D2830;
+    --muted: #5D6E7C;
+    --line: #D8DFE5;
+    --band: #F1F4F6;
+    --card: #FFFFFF;
+    --capture: #0E7C7B;
+    --capture-soft: #E2F0EF;
+    --analysis: #B26A00;
+    --analysis-soft: #F7EDDC;
+    --outcome: #3E7B50;
+    --outcome-soft: #E5F0E8;
+    --danger: #A3403C;
+    --danger-soft: #F6E7E6;
+    --serif: Cambria, Georgia, 'Times New Roman', serif;
+    --sans: 'Segoe UI', -apple-system, system-ui, sans-serif;
+    --mono: Consolas, 'Cascadia Code', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12191F;
+      --ink: #E4EAEE;
+      --muted: #93A4B1;
+      --line: #2B3945;
+      --band: #182129;
+      --card: #1D2833;
+      --capture: #4FB3B0;
+      --capture-soft: #12302F;
+      --analysis: #E0A353;
+      --analysis-soft: #33270F;
+      --outcome: #7BB98B;
+      --outcome-soft: #16291B;
+      --danger: #D48480;
+      --danger-soft: #341A18;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12191F; --ink: #E4EAEE; --muted: #93A4B1; --line: #2B3945;
+    --band: #182129; --card: #1D2833;
+    --capture: #4FB3B0; --capture-soft: #12302F;
+    --analysis: #E0A353; --analysis-soft: #33270F;
+    --outcome: #7BB98B; --outcome-soft: #16291B;
+    --danger: #D48480; --danger-soft: #341A18;
+  }
+  :root[data-theme="light"] {
+    --paper: #FBFCFD; --ink: #1D2830; --muted: #5D6E7C; --line: #D8DFE5;
+    --band: #F1F4F6; --card: #FFFFFF;
+    --capture: #0E7C7B; --capture-soft: #E2F0EF;
+    --analysis: #B26A00; --analysis-soft: #F7EDDC;
+    --outcome: #3E7B50; --outcome-soft: #E5F0E8;
+    --danger: #A3403C; --danger-soft: #F6E7E6;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16.5px; line-height: 1.62;
+  }
+  .wrap { max-width: 748px; margin: 0 auto; padding: 0 24px 96px; }
+
+  header.doc { padding: 64px 0 8px; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    font-family: var(--serif); font-size: clamp(30px, 5vw, 42px);
+    line-height: 1.15; margin: 10px 0 12px; text-wrap: balance; font-weight: 700;
+  }
+  .dek { font-size: 18px; color: var(--muted); max-width: 60ch; margin: 0 0 40px; }
+
+  h2 {
+    font-family: var(--serif); font-size: 27px; line-height: 1.25;
+    margin: 64px 0 4px; text-wrap: balance;
+  }
+  h3 { font-family: var(--serif); font-size: 20px; margin: 36px 0 8px; }
+  .kicker {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; margin: 56px 0 -56px; padding-top: 8px;
+  }
+  .kicker.cap { color: var(--capture); }
+  .kicker.ana { color: var(--analysis); }
+  .kicker.out { color: var(--outcome); }
+  p { margin: 14px 0; }
+  strong { font-weight: 600; }
+  ul { padding-left: 22px; }
+  li { margin: 7px 0; }
+
+  /* ---------- diagram bands ---------- */
+  .band {
+    background: var(--band); border: 1px solid var(--line); border-radius: 6px;
+    padding: 26px 22px; margin: 26px 0; overflow-x: auto;
+  }
+
+  /* slim, theme-matched scrollbars for anything that overflows sideways */
+  .band, .tbl-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .band::-webkit-scrollbar, .tbl-scroll::-webkit-scrollbar { height: 8px; }
+  .band::-webkit-scrollbar-track, .tbl-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .band::-webkit-scrollbar-thumb, .tbl-scroll::-webkit-scrollbar-thumb {
+    background: var(--line); border-radius: 99px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  .band::-webkit-scrollbar-thumb:hover, .tbl-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--muted); background-clip: padding-box; border: 2px solid transparent;
+  }
+  .band .cap-label {
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    letter-spacing: 0.1em; text-transform: uppercase; margin: 0 0 18px;
+  }
+
+  /* pipeline */
+  .pipeline { display: flex; align-items: stretch; gap: 0; min-width: 620px; }
+  .stage {
+    flex: 1; background: var(--card); border: 1px solid var(--line);
+    border-top: 3px solid var(--muted); border-radius: 5px; padding: 14px 14px 12px;
+  }
+  .stage h4 { margin: 0 0 6px; font-size: 14px; font-family: var(--sans); font-weight: 700; letter-spacing: 0.02em; }
+  .stage p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .stage.s-cap { border-top-color: var(--capture); }
+  .stage.s-cap h4 { color: var(--capture); }
+  .stage.s-ana { border-top-color: var(--analysis); }
+  .stage.s-ana h4 { color: var(--analysis); }
+  .stage.s-out { border-top-color: var(--outcome); }
+  .stage.s-out h4 { color: var(--outcome); }
+  .arrow {
+    align-self: center; padding: 0 8px; color: var(--muted);
+    font-size: 20px; flex: 0 0 auto; user-select: none;
+  }
+  .fence {
+    min-width: 620px; margin-top: 14px; display: flex; font-family: var(--mono);
+    font-size: 11.5px;
+  }
+  .fence .zone {
+    border-top: 2px dashed var(--capture); color: var(--capture);
+    padding-top: 6px; text-align: center;
+  }
+  .fence .zone.share { border-top-color: var(--outcome); color: var(--outcome); }
+  .fence .gap { flex: 0 0 36px; }
+
+  /* tick flow */
+  .tick { min-width: 560px; }
+  .tick .step {
+    display: flex; align-items: center; gap: 14px; margin: 0;
+  }
+  .tick .q {
+    flex: 0 0 300px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 5px; padding: 9px 13px; font-size: 14px;
+  }
+  .tick .branch { font-size: 13px; color: var(--muted); }
+  .tick .branch b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; padding: 1px 7px; border-radius: 3px; }
+  .tick .yes b { background: var(--capture-soft); color: var(--capture); }
+  .tick .no b  { background: var(--band); color: var(--muted); border: 1px solid var(--line); }
+  .tick .drop { display: flex; justify-content: center; width: 300px; flex: 0 0 300px; }
+  .tick .drop span { color: var(--muted); font-size: 15px; line-height: 1; padding: 3px 0; }
+  .tick .final {
+    flex: 0 0 300px; background: var(--capture-soft); border: 1px solid var(--capture);
+    border-radius: 5px; padding: 9px 13px; font-size: 14px; color: var(--capture); font-weight: 600;
+  }
+
+  /* state cards */
+  .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; min-width: 600px; }
+  .state {
+    background: var(--card); border: 1px solid var(--line); border-radius: 5px; padding: 14px;
+  }
+  .state h4 { margin: 0 0 8px; font-size: 15px; }
+  .state dl { margin: 0; font-size: 13px; }
+  .state dt { color: var(--muted); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 8px; }
+  .state dd { margin: 1px 0 0; }
+  .pill { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 9px; border-radius: 20px; letter-spacing: 0.05em; }
+  .pill.active  { background: var(--capture-soft); color: var(--capture); }
+  .pill.passive { background: var(--analysis-soft); color: var(--analysis); }
+  .pill.idle    { background: var(--band); color: var(--muted); border: 1px solid var(--line); }
+
+  /* session timeline */
+  .timeline { min-width: 640px; }
+  .tl-row { display: flex; gap: 3px; align-items: flex-end; height: 56px; }
+  .tl-seg { border-radius: 3px 3px 0 0; height: 40px; position: relative; }
+  .tl-seg.a { background: var(--capture); opacity: 0.85; }
+  .tl-seg.b { background: var(--analysis); opacity: 0.8; }
+  .tl-seg.c { background: var(--outcome); opacity: 0.8; }
+  .tl-seg.gap { background: transparent; border-bottom: 2px dotted var(--muted); height: 12px; }
+  .tl-labels { display: flex; gap: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 6px; }
+  .tl-labels div { text-align: center; line-height: 1.35; }
+  .tl-cuts { display: flex; gap: 3px; font-size: 11px; margin-bottom: 4px; color: var(--ink); }
+  .tl-cuts div { text-align: center; font-family: var(--mono); font-size: 10px; }
+  .cut { border-left: 2px solid var(--danger); color: var(--danger); padding-left: 4px; white-space: nowrap; }
+
+  /* ping-pong */
+  .pingpong { display: flex; gap: 6px; align-items: center; min-width: 560px; flex-wrap: nowrap; }
+  .pp {
+    font-family: var(--mono); font-size: 12px; padding: 8px 10px; border-radius: 4px;
+    white-space: nowrap;
+  }
+  .pp.x { background: var(--capture-soft); color: var(--capture); border: 1px solid var(--capture); }
+  .pp.y { background: var(--analysis-soft); color: var(--analysis); border: 1px solid var(--analysis); }
+  .pp-arrow { color: var(--muted); font-size: 13px; }
+
+  /* tables */
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin: 18px 0; }
+  th {
+    text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+    border-bottom: 2px solid var(--line); padding: 8px 14px 8px 0;
+  }
+  td { border-bottom: 1px solid var(--line); padding: 9px 14px 9px 0; vertical-align: top; }
+  .tbl-scroll { overflow-x: auto; }
+  .tbl-scroll table { min-width: 560px; }
+
+  /* callouts */
+  .note {
+    border-left: 3px solid var(--capture); background: var(--capture-soft);
+    padding: 12px 16px; border-radius: 0 5px 5px 0; margin: 20px 0; font-size: 15px;
+  }
+  .note.warn { border-left-color: var(--danger); background: var(--danger-soft); }
+  .note.gain { border-left-color: var(--outcome); background: var(--outcome-soft); }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  @media (max-width: 640px) { .twocol { grid-template-columns: 1fr; } }
+  .twocol .col {
+    border: 1px solid var(--line); border-radius: 5px; padding: 14px 16px; background: var(--card);
+  }
+  .twocol h4 { margin: 0 0 8px; font-size: 14px; font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+  .twocol .is h4 { color: var(--capture); }
+  .twocol .isnt h4 { color: var(--danger); }
+  .twocol ul { margin: 0; padding-left: 18px; font-size: 14.5px; }
+
+  code {
+    font-family: var(--mono); font-size: 0.88em; background: var(--band);
+    border: 1px solid var(--line); padding: 1px 5px; border-radius: 3px;
+  }
+
+  /* ---------- tabs ---------- */
+  .tabs {
+    display: flex; gap: 4px; margin: 22px 0 0; border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    appearance: none; background: none; border: none; cursor: pointer;
+    font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); padding: 10px 14px 12px;
+    border-bottom: 3px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] {
+    color: var(--capture); border-bottom-color: var(--capture); font-weight: 700;
+  }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* rollout ladder */
+  .ladder { min-width: 600px; display: flex; flex-direction: column; gap: 10px; }
+  .rung { display: flex; align-items: stretch; gap: 14px; }
+  .rung .num {
+    flex: 0 0 34px; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 15px; font-weight: 700;
+    background: var(--card); border: 1px solid var(--line); border-radius: 5px;
+  }
+  .rung .body {
+    flex: 1; background: var(--card); border: 1px solid var(--line);
+    border-left: 3px solid var(--muted); border-radius: 5px; padding: 12px 14px;
+  }
+  .rung .body h4 { margin: 0 0 4px; font-size: 14.5px; font-family: var(--sans); }
+  .rung .body p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .rung.r1 .body { border-left-color: var(--capture); }
+  .rung.r2 .body { border-left-color: var(--analysis); }
+  .rung.r3 .body { border-left-color: var(--outcome); }
+  .rung .down { text-align: center; color: var(--muted); font-size: 16px; line-height: 1; margin-left: 12px; }
+
+  /* two-lane engine comparison */
+  .duo { min-width: 640px; display: flex; flex-direction: column; gap: 24px; }
+  .lane-title {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; margin: 0 0 8px; font-weight: 700;
+  }
+  .lane-title.la { color: var(--analysis); }
+  .lane-title.lb-t { color: var(--capture); }
+  .lane { display: flex; align-items: stretch; gap: 0; }
+  .lane .lbox {
+    flex: 1; background: var(--card); border: 1px solid var(--line);
+    border-radius: 5px; padding: 10px 12px; min-width: 0;
+  }
+  .lane .lbox h5 { margin: 0 0 4px; font-size: 12.5px; font-family: var(--sans); font-weight: 700; }
+  .lane .lbox p { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .lane .lbox.t-ana { border-top: 3px solid var(--analysis); }
+  .lane .lbox.t-cap { border-top: 3px solid var(--capture); }
+  .lane .lbox.warn-b { border-top: 3px solid var(--danger); }
+  .lane .lbox .tag {
+    display: inline-block; font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: 0.07em; text-transform: uppercase; padding: 1px 7px;
+    border-radius: 20px; margin-bottom: 5px;
+  }
+  .tag.free { background: var(--analysis-soft); color: var(--analysis); }
+  .tag.diy  { background: var(--capture-soft); color: var(--capture); }
+  .tag.risk { background: var(--danger-soft); color: var(--danger); }
+  .lane .arrow { font-size: 16px; padding: 0 6px; }
+  .lane-foot {
+    margin: 8px 0 0; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .lane-foot b { color: var(--ink); font-weight: 600; }
+
+  /* funnel for the ultimate analysis */
+  .funnel { min-width: 600px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .funnel .layer {
+    background: var(--card); border: 1px solid var(--line); border-radius: 5px;
+    padding: 10px 16px; font-size: 13.5px; text-align: center;
+  }
+  .funnel .layer b { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .funnel .l1 { width: 100%; }
+  .funnel .l2 { width: 84%; border-top: 3px solid var(--capture); }
+  .funnel .l3 { width: 68%; border-top: 3px solid var(--analysis); }
+  .funnel .l4 { width: 52%; border-top: 3px solid var(--outcome); background: var(--outcome-soft); }
+  .funnel .fdown { color: var(--muted); font-size: 15px; line-height: 1; }
+  footer { margin-top: 72px; border-top: 1px solid var(--line); padding-top: 16px; font-size: 13px; color: var(--muted); }
+  a { color: var(--capture); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="doc" style="border-bottom: none; padding-bottom: 0;">
+    <div class="eyebrow">Internal briefing · FDE Audit</div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" id="tab-how" role="tab" aria-selected="true" aria-controls="page-how" onclick="showPage('how')">How it works</button>
+      <button class="tab" id="tab-deploy" role="tab" aria-selected="false" aria-controls="page-deploy" onclick="showPage('deploy')">Deployment &amp; the ultimate analysis</button>
+      <button class="tab" id="tab-analyze" role="tab" aria-selected="false" aria-controls="page-analyze" onclick="showPage('analyze')">Cheaper analysis options</button>
+    </nav>
+  </header>
+
+  <section class="page active" id="page-how" role="tabpanel" aria-labelledby="tab-how">
+
+  <h1>How FDE Audit works, from screenshot to insight</h1>
+  <p class="dek">A plain-language walkthrough of what this system records while you work, what it deliberately does <em>not</em> record, how raw screenshots become findings, and what the company learns from it.</p>
+
+  <h2>The idea in one paragraph</h2>
+  <p>While a person <strong>chooses to record a work session</strong>, a small program takes a screenshot of their active monitor every 5&nbsp;seconds and notes which app and window is in front. Nothing is analyzed at that moment, and no AI is involved — it's just a camera and a notebook. Later, on demand, an AI pass reads a <em>small sample</em> of those screenshots, labels what kind of work was happening, and looks for patterns: repeated manual chores, two apps being juggled where one integration would do, overlapping tools across departments. The output is a set of <strong>concrete, priced improvement opportunities</strong> — automate this, consolidate that, build a small tool here.</p>
+
+  <div class="band">
+    <p class="cap-label">The whole pipeline</p>
+    <div class="pipeline">
+      <div class="stage s-cap">
+        <h4>1 · Capture</h4>
+        <p>Every 5s: screenshot + note of app, window, activity. No AI. Free to run.</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage s-cap">
+        <h4>2 · Local vault</h4>
+        <p>Images + metadata stored on the person's own machine, in a local database (SQLite in this beta build).</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage s-ana">
+        <h4>3 · Analysis</h4>
+        <p>On demand: free pattern mining, then AI reads a few representative screenshots.</p>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage s-out">
+        <h4>4 · Insights</h4>
+        <p>Labeled work summaries, confirmed patterns, opportunity reports by person/department.</p>
+      </div>
+    </div>
+    <div class="fence">
+      <div class="zone" style="flex: 0 0 47%">screenshots never leave this machine</div>
+      <div class="gap"></div>
+      <div class="zone share" style="flex: 1">only text summaries &amp; findings can be shared</div>
+    </div>
+  </div>
+
+  <div class="kicker cap">Stage 1 · Capture</div>
+  <h2>What happens every 5 seconds</h2>
+  <p>The recorder runs a simple checklist on each tick. The important property: it always writes a small <strong>metadata note</strong> (timestamp, app name, window title, how long since the last keyboard/mouse input) — that note is how we later know where time went. Whether it also saves an <strong>image</strong> depends on the checks below.</p>
+
+  <div class="band">
+    <p class="cap-label">One tick of the recorder</p>
+    <div class="tick">
+      <div class="step">
+        <div class="q">Has the user paused capture?</div>
+        <div class="branch yes"><b>YES</b>&nbsp; note only, no image</div>
+      </div>
+      <div class="step drop"><span>↓ no</span></div>
+      <div class="step">
+        <div class="q">Idle — no input for a long while?</div>
+        <div class="branch yes"><b>YES</b>&nbsp; collapse: one "idle" note, no image</div>
+      </div>
+      <div class="step drop"><span>↓ no</span></div>
+      <div class="step">
+        <div class="q">Private app or window? (password manager, banking…)</div>
+        <div class="branch yes"><b>YES</b>&nbsp; note only, screenshot suppressed</div>
+      </div>
+      <div class="step drop"><span>↓ no</span></div>
+      <div class="step">
+        <div class="q">Does the screen look the same as last time?</div>
+        <div class="branch yes"><b>YES</b>&nbsp; note marked "duplicate," no new image</div>
+      </div>
+      <div class="step drop"><span>↓ no — screen changed</span></div>
+      <div class="step">
+        <div class="final">Save a screenshot of the active monitor + the metadata note</div>
+      </div>
+    </div>
+  </div>
+
+  <p>The "looks the same" check is a pixel comparison, not comprehension — nothing is <em>reading</em> the screen at capture time. Its only job is to avoid saving 700 identical images of a document someone stared at for an hour. Even then, one image per minute is kept as a heartbeat so analysis can confirm continuous work.</p>
+
+  <div class="twocol">
+    <div class="col is">
+      <h4>Captured</h4>
+      <ul>
+        <li>Screenshots of the active monitor (JPEG)</li>
+        <li>Which app + window title is in front</li>
+        <li>Seconds since last keyboard/mouse input</li>
+        <li>Whether the screen changed since last tick</li>
+        <li>Timestamps, person &amp; device IDs</li>
+      </ul>
+    </div>
+    <div class="col isnt">
+      <h4>Never captured</h4>
+      <ul>
+        <li>Keystrokes or clipboard contents</li>
+        <li>Anything while capture is paused</li>
+        <li>Screenshots of denylisted apps/sites</li>
+        <li>Anything while the screen is locked</li>
+        <li>Anything outside a recording session the person started</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Active, passive, idle — how time is classified</h3>
+  <p>Every 5-second note is tagged with one of three states, derived from two free signals: <em>recent input</em> and <em>did the pixels change</em>. This is what makes the time math honest — reading counts as work, walking away doesn't.</p>
+
+  <div class="band">
+    <div class="states">
+      <div class="state">
+        <h4><span class="pill active">ACTIVE</span></h4>
+        <dl>
+          <dt>Means</dt><dd>Typing, clicking, or the screen is changing</dd>
+          <dt>Screenshot</dt><dd>Yes, when the screen changes</dd>
+          <dt>Counts as work</dt><dd>Yes</dd>
+        </dl>
+      </div>
+      <div class="state">
+        <h4><span class="pill passive">PASSIVE</span></h4>
+        <dl>
+          <dt>Means</dt><dd>No input, but an app is in front — reading, reviewing, watching</dd>
+          <dt>Screenshot</dt><dd>Heartbeat only (~1/min)</dd>
+          <dt>Counts as work</dt><dd>Yes — reading time is never dropped</dd>
+        </dl>
+      </div>
+      <div class="state">
+        <h4><span class="pill idle">IDLE</span></h4>
+        <dl>
+          <dt>Means</dt><dd>No input past the grace window, or screen locked</dd>
+          <dt>Screenshot</dt><dd>Never</dd>
+          <dt>Counts as work</dt><dd>No — collapsed to almost nothing</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="kicker ana">Stage 3 · Analysis</div>
+  <h2>Sessions: how a day of frames becomes chapters</h2>
+  <p>Analysis doesn't look at 5-second frames one by one. It first groups them into <strong>sessions</strong> — contiguous stretches of the same working context. Each session becomes one labeled entry ("10:15–10:52, QuickBooks, bank reconciliation") rather than 440 raw frames.</p>
+
+  <div class="note">
+    <strong>A "session" here is a unit of work, not a stretch of time in the chair.</strong> It is <em>not</em> login-to-logout, and it is not the whole span you had the recorder running (that opt-in span is a <em>recording</em> session). It's a single contiguous piece of <strong>one working context</strong> — roughly one task, in one app, on one screen — that the analysis carves out on its own and labels with a capability, a description, friction, and a measured time cost. Someone who never leaves their desk still produces many sessions as they move from task to task: the unbroken morning below sits in one app the entire time and is still <strong>four</strong> separate sessions.
+  </div>
+
+  <p>A new session starts when <strong>any</strong> of five triggers fires:</p>
+  <ul>
+    <li><strong>App change</strong> — switched from Excel to Chrome.</li>
+    <li><strong>Window/title change</strong> — new browser page, different file open.</li>
+    <li><strong>Big visual change</strong> — the screen materially changed <em>inside</em> the same app. This is the key one for programs like QuickBooks whose window title never changes: an invoice screen and a reconciliation screen have the same title but look completely different, so the pixel signal splits them apart.</li>
+    <li><strong>Idle gap</strong> — the person stepped away and came back (short blips don't split).</li>
+    <li><strong>Time cap (~10 min)</strong> — even an unbroken stretch is chunked so no single label has to cover hours.</li>
+  </ul>
+
+  <div class="band">
+    <p class="cap-label">Example: an accountant's morning, one app the whole time</p>
+    <div class="timeline">
+      <div class="tl-cuts">
+        <div style="flex: 0 0 28%"></div>
+        <div class="cut" style="flex: 0 0 24%">big visual change</div>
+        <div class="cut" style="flex: 0 0 8%">idle gap</div>
+        <div class="cut" style="flex: 1">visual change</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-seg a" style="flex: 0 0 28%"></div>
+        <div class="tl-seg b" style="flex: 0 0 24%"></div>
+        <div class="tl-seg gap" style="flex: 0 0 8%"></div>
+        <div class="tl-seg b" style="flex: 0 0 14%"></div>
+        <div class="tl-seg c" style="flex: 1"></div>
+      </div>
+      <div class="tl-labels">
+        <div style="flex: 0 0 28%">9:00–10:10<br>creating invoices</div>
+        <div style="flex: 0 0 24%">10:10–11:00<br>bank reconciliation</div>
+        <div style="flex: 0 0 8%">break</div>
+        <div style="flex: 0 0 14%">11:10–11:40<br>reconciliation</div>
+        <div style="flex: 1">11:40–12:00<br>payroll run</div>
+      </div>
+    </div>
+    <p style="font-size: 13.5px; color: var(--muted); margin: 14px 0 0;">Window title said "QuickBooks — Acme Books" all morning. The pixel-change and idle signals still split the morning into four distinct, correctly-labeled tasks.</p>
+  </div>
+
+  <h2>Free pattern mining happens before any AI</h2>
+  <p>Before a single screenshot is read, plain arithmetic over the metadata finds the interesting spots — this costs nothing and can run any time:</p>
+  <ul>
+    <li><strong>Ping-pong loops.</strong> Rapid alternation between two apps almost always means someone is manually carrying data between systems — the single strongest signal that an integration or small custom tool would pay for itself.</li>
+    <li><strong>Recurring sequences.</strong> The same app chain every morning (<code>Outlook → Excel → Portal</code>) is a ritual — a report or process that's a prime automation candidate.</li>
+    <li><strong>Input density.</strong> What fraction of each session had recent keyboard/mouse input. Heavy typing in an app suggests data entry (automatable); mostly reading suggests review work (a different kind of opportunity).</li>
+  </ul>
+
+  <div class="band">
+    <p class="cap-label">A ping-pong loop — 14 switches in 20 minutes</p>
+    <div class="pingpong">
+      <span class="pp x">Excel</span><span class="pp-arrow">→</span>
+      <span class="pp y">QuickBooks</span><span class="pp-arrow">→</span>
+      <span class="pp x">Excel</span><span class="pp-arrow">→</span>
+      <span class="pp y">QuickBooks</span><span class="pp-arrow">→</span>
+      <span class="pp x">Excel</span><span class="pp-arrow">→</span>
+      <span class="pp y">QuickBooks</span><span class="pp-arrow">→</span>
+      <span class="pp x">…</span>
+    </div>
+    <p style="font-size: 13.5px; color: var(--muted); margin: 14px 0 0;">Reading: numbers are being re-keyed by hand from one system into the other. The AI then reads a couple of frames from this stretch to confirm <em>what</em> is being transferred.</p>
+  </div>
+
+  <h2>Then the AI reads a small sample — not everything</h2>
+  <p>Only now does a model look at images. For each session it reads <strong>one representative screenshot</strong> (start, middle, and end for long sessions) and writes a structured label:</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>Field</th><th>Example</th><th>Why it matters</th></tr>
+    <tr><td><strong>Capability</strong></td><td><code>reconciliation</code> (from a fixed list of ~20)</td><td>The fixed vocabulary is what lets the org compare across people and apps — "which apps serve the same function?"</td></tr>
+    <tr><td><strong>Task</strong></td><td>"reconciling the Chase operating account"</td><td>The specific human description</td></tr>
+    <tr><td><strong>Low-value flag</strong></td><td>yes/no</td><td>Marks repetitive/manual work worth eliminating</td></tr>
+    <tr><td><strong>Friction</strong></td><td>"error dialog visible," "long loading screens"</td><td>Recurring friction in one app is a train-or-replace signal</td></tr>
+  </table>
+  </div>
+  <p>A morning of ~2,000 raw frames typically costs a few dozen image reads — the dedupe and sessioning did the compression in advance.</p>
+
+  <div class="kicker out">Stage 4 · Insights</div>
+  <h2>What the company actually gains</h2>
+  <p>Single observations are anecdotes. A pattern only becomes a <strong>finding</strong> after it repeats 3–4 times, and every confirmed finding is typed and priced:</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>Opportunity type</th><th>What it looks like in the data</th><th>Example outcome</th></tr>
+    <tr><td><strong>Automate</strong></td><td>Same manual sequence recurring daily/weekly</td><td>Script the Monday report — saves 90 min/week</td></tr>
+    <tr><td><strong>Integrate</strong></td><td>Ping-pong between two systems</td><td>Connect Excel → QuickBooks import — kills re-keying</td></tr>
+    <tr><td><strong>Consolidate</strong></td><td>Same <em>capability</em> spread across multiple paid apps</td><td>3 departments use 3 task trackers — cut 2 licenses</td></tr>
+    <tr><td><strong>Build custom</strong></td><td>A chore no off-the-shelf tool covers, seen org-wide</td><td>Small internal app replaces a spreadsheet ritual</td></tr>
+    <tr><td><strong>Train</strong></td><td>Friction/slow paths where a faster feature exists</td><td>Teach the shortcut; adopt the built-in report</td></tr>
+    <tr><td><strong>Eliminate</strong></td><td>Recurring low-value work with no downstream consumer</td><td>Stop producing the report nobody opens</td></tr>
+  </table>
+  </div>
+  <p>Each finding carries an <strong>estimated minutes-per-week cost measured from real timestamps</strong> — not guesses — so "minutes × people × hourly cost" turns directly into a defensible dollar figure per opportunity, sliceable by person or department.</p>
+
+  <div class="note gain">
+    <strong>The end products:</strong> per-person work summaries, a ledger of confirmed improvement opportunities with time-cost estimates, per-app usage totals for license decisions, and periodic digest reports — all text, all derived, all shareable without a single screenshot leaving anyone's machine.
+  </div>
+
+  <h2>Privacy model, summarized</h2>
+  <ul>
+    <li><strong>Opt-in recording.</strong> Capture only runs during sessions the person starts, and a pause file suspends it instantly without stopping anything.</li>
+    <li><strong>Raw stays local.</strong> Screenshots and frame-by-frame records live only on the person's machine, forever. Old screenshots are auto-deleted after a retention window (default 14 days); the time-accounting notes are kept.</li>
+    <li><strong>Denylist.</strong> Password managers, banking, and any configured app/site record a "was open" note but never an image.</li>
+    <li><strong>What can be shared upward</strong> is only the derived text: session summaries, confirmed findings, app-usage totals, digest reports.</li>
+    <li><strong>No keystrokes, no clipboard, ever.</strong> This was considered and rejected by design — the visual + timing signals get the insight without crossing into surveillance.</li>
+  </ul>
+
+  </section>
+
+  <section class="page" id="page-deploy" role="tabpanel" aria-labelledby="tab-deploy">
+
+  <h1>Rolling it out to every PC — and the analysis that pays it all back</h1>
+  <p class="dek">How the recorder and the nightly analysis get onto each employee's machine, what flows to the central database, and how — once enough data has accumulated — one organization-wide pass turns thousands of individual observations into a ranked, priced improvement plan.</p>
+
+  <h2>Two things get deployed, not one</h2>
+  <p>Each employee's PC runs two separate pieces, and keeping them separate is what makes the rollout cheap and the privacy story simple:</p>
+  <ul>
+    <li><strong>The capture app</strong> — the lightweight, model-free recorder described on the first tab. It writes screenshots and metadata to the person's own disk and local database. No AI, no network traffic, never phones home.</li>
+    <li><strong>The nightly analysis pass</strong> — a job that samples the day's frames, reads them with vision, and ships <em>only the derived text</em> — session summaries, observations, per-app usage rollups — to one central PostgreSQL database that all machines can reach over the corporate network or VPN. It can be delivered in two distinct ways (a Claude Code command, or a single self-contained API-key script) — see <a href="#deploy-methods">the two deployment methods</a> below.</li>
+  </ul>
+  <div class="note">
+    <strong>The one rule that never bends:</strong> raw screenshots never leave the machine that took them. Only text derived from them crosses the wire. A misbehaving analysis also can't corrupt the shared database — Claude emits validated structured output, and a small deterministic tool (<code>fde_audit ingest</code>) is the only thing holding a key to the database.
+  </div>
+
+  <h2>Tagging each employee to their department — automatically</h2>
+  <p>Every finding in the final analysis is sliceable <em>by department</em>: "Finance loses 40 hrs/week to a manual close," "Procurement and Finance both pay for overlapping task-trackers." That only works if every row in the database knows which department its employee belongs to. But when IT silently pushes the agent to a few hundred Finance machines, nobody is sitting at each one to type in "Finance." So the agent labels itself, on first run, with <strong>zero per-machine setup</strong>.</p>
+
+  <p>Two things get resolved automatically the moment capture starts on a machine — the employee's <strong>identity</strong> and their <strong>department</strong>:</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>What</th><th>Where it comes from</th><th>Why</th></tr>
+    <tr><td><strong>Identity</strong> (which employee this is)</td><td>The Windows account <strong>SID</strong> — read locally from the logged-in session (<code>whoami /user</code> under the hood). No login prompt, no credentials, no 365/OAuth: the agent already runs <em>as</em> that user, so it just asks Windows.</td><td>The SID is assigned by Active Directory when the account is created and never changes — so the same person maps to one record across reboots, reinstalls, and re-pushes. (Falls back to <code>DOMAIN\user</code>, then the hostname, so it never hard-fails.)</td></tr>
+    <tr><td><strong>Department</strong> (the label for analysis)</td><td>Resolved in a two-step order — see below.</td><td>AD is authoritative when it's populated; the packaged config is the guaranteed fallback.</td></tr>
+  </table>
+  </div>
+
+  <h3>How the department is decided — AD first, package config second</h3>
+  <ol>
+    <li><strong>Active Directory attribute (preferred).</strong> On a domain-joined machine, the agent asks the domain controller, live: <em>"for this user's SID, what's the <code>department</code> attribute?"</em> — using the built-in ADSI searcher (no extra software, no admin rights). If HR/IT keep the <code>department</code> field populated in AD, the machine self-classifies with the real, current department — and even self-corrects later if the employee transfers.</li>
+    <li><strong>Packaged config default (fallback).</strong> If the box is off-domain, or AD has no department set for that user, the agent silently falls back to the <code>default_department</code> value baked into the <code>config.toml</code> that shipped inside the package.</li>
+  </ol>
+
+  <div class="note">
+    <strong>What you hand IT is opaque — they edit nothing.</strong> To roll out to Finance, you set <code>default_department = "Finance"</code> in the config once, on your machine, bundle it into the package, and tell IT: <em>"push <code>fde-audit-finance</code> to every Finance machine."</em> For Procurement, you cut a <code>fde-audit-procurement</code> package the same way. The department label travels <em>inside</em> the package; IT never opens a text editor, and there is no <code>person add</code> to run per employee. On machines where AD is populated, the agent even overrides your default with the real AD department — so the config value is just the safety net.
+  </div>
+
+  <p>The net effect: one push per department, no hand-touching machines, and every session, observation, and app-usage row lands in the database already tagged with the right department — ready for the org-wide analysis to slice by team.</p>
+
+  <h2 id="deploy-methods">Two distinct ways to deploy the nightly analysis</h2>
+  <p>The nightly pass can be delivered to each machine in two different ways. Both run the <em>same</em> analysis and write to the same central database — the difference is what has to exist on each employee's PC for the run to happen, and that difference is what decides how hard the rollout is.</p>
+
+  <div class="twocol">
+    <div class="col is">
+      <h4>Method 1 · API-key script ⭐ recommended</h4>
+      <ul>
+        <li><strong>One self-contained Python script.</strong> It samples the day's frames, calls the Claude API directly with an org API key, validates the structured labels, and writes to PostgreSQL. Ship the one file and it deploys — that's the whole rollout.</li>
+        <li><strong>No Claude Code needed, nothing for the employee to do.</strong> No install beyond the script, no login, no subscription — Task Scheduler runs it silently overnight.</li>
+        <li><strong>Trivial to push at scale.</strong> IT pushes one file plus a service key via Group Policy / Intune to hundreds of machines; there is no per-machine auth that can silently break.</li>
+        <li><strong>Billed centrally and metered.</strong> One org API key, predictable per-token cost, all spend visible in one console.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>Method 2 · Claude Code</h4>
+      <ul>
+        <li><strong>The analysis runs as a Claude Code command</strong> (<code>/analyze-session</code>) — run by hand at end of day, or headless via Task Scheduler (<code>claude -p "/analyze-session"</code>).</li>
+        <li><strong>Orchestration comes for free:</strong> retries, tool-calling, and structured-output validation are handled by the harness rather than your own code, and the versioned command file is one source of truth for everyone.</li>
+        <li><strong>Runs on each person's existing Claude subscription</strong> — a small pilot costs effectively $0 extra.</li>
+        <li><strong>The catch:</strong> every machine needs Claude Code installed <em>and logged in</em>, and that unattended auth has to keep working on every PC, forever. Fine for five volunteers; painful for five hundred machines.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note gain">
+    <strong>Rule of thumb:</strong> Claude Code for the pilot — volunteers already have it and the marginal cost is $0 — then the API-key script for any real rollout. One Python file plus a key is a far lighter thing to push to a fleet than a logged-in Claude Code install on every PC.
+  </div>
+
+  <h3>Scheduling the nightly run — automated vs. manual (beta status)</h3>
+  <p>Both pieces are meant to run headless via <strong>Windows Task Scheduler</strong>, and a Python script can register those tasks itself — no one has to open Task Scheduler by hand on each machine. It shells out to the built-in <code>schtasks</code> command, so the "install the schedule" step is just part of the push.</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>Task</th><th>Auto-installs the schedule?</th><th>How</th></tr>
+    <tr><td><strong>Capture recorder</strong></td><td><strong>Yes — already built</strong></td><td><code>fde_audit capture install-task</code> registers a logon-triggered task (runs as the current user, restarts on crash, no console window). A per-user logon task needs no admin rights.</td></tr>
+    <tr><td><strong>Nightly analysis pass</strong></td><td><strong>Not yet — manual during beta</strong></td><td>Run by hand for now (<code>claude -p "/analyze-session"</code> or the API-key script). Deliberately left manual to keep beta test machines light.</td></tr>
+  </table>
+  </div>
+  <div class="note">
+    <strong>Beta note → full-deploy requirement:</strong> during beta testing the nightly analysis is triggered manually, on purpose, to keep the footprint on each test machine minimal. For a full department rollout this becomes a <em>necessity to automate</em> — you cannot rely on each employee to remember to run the analysis every night. The mechanism is already proven: the planned <code>analyze install-task</code> command will mirror the existing capture task installer, registering a <em>daily-time-triggered</em> scheduled task (instead of a logon trigger) so both capture and the nightly pass install from a single push, with nothing for the employee to do.
+  </div>
+
+  <h3>The recommended rollout ladder</h3>
+  <div class="band">
+    <p class="cap-label">Pilot → department → fleet</p>
+    <div class="ladder">
+      <div class="rung r1">
+        <div class="num">1</div>
+        <div class="body">
+          <h4>Pilot — prove it's useful (Claude Code method)</h4>
+          <p>2–5 volunteers run <code>/analyze-session</code> manually on their own Claude subscriptions. Zero procurement, zero automation. Goal: confirm the findings are worth acting on.</p>
+        </div>
+      </div>
+      <div class="down">↓</div>
+      <div class="rung r2">
+        <div class="num">2</div>
+        <div class="body">
+          <h4>Department — switch to the API-key script</h4>
+          <p>IT pushes the one-file script + org API key; Task Scheduler fires it nightly on every machine; <code>fde_audit ingest</code> writes to central PostgreSQL; 14-day (or shorter) local image retention; written monitoring policy in place <em>before</em> switching on.</p>
+        </div>
+      </div>
+      <div class="down">↓</div>
+      <div class="rung r3">
+        <div class="num">3</div>
+        <div class="body">
+          <h4>Fleet — same script, centralized control</h4>
+          <p>The same API-key script, plus health checks and one dashboard where IT sees every machine's analysis status. An always-on Agent SDK service is an option here, but only if the scheduled script has actually been outgrown.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>What it costs</h3>
+  <ul>
+    <li><strong>Pilot on subscriptions (Claude Code method):</strong> the nightly run draws on each volunteer's own Claude plan — marginal cost effectively $0. Each machine's Claude Code must be logged in once so unattended runs can authenticate.</li>
+    <li><strong>Rollout on an org API key (script method):</strong> metered per token, billed centrally, predictable. The pipeline reads only 1–3 representative screenshots per session — roughly 250 images per person per week — so on Claude Haiku 4.5 this comes to about <strong>$0.85 per person per week</strong>, or roughly <strong>$0.43 with the Batch API</strong> (50% off, and a nightly job is a perfect fit for async batch). The vision reads are the cost driver; the end-of-day synthesis is a handful of cheap text calls. Measure the pilot's real spend before budgeting further — see the third tab for even cheaper options.</li>
+  </ul>
+
+  <h2>The ultimate analysis: when the database is finally full enough</h2>
+  <p>Everything above produces a steady drip into the central database: labeled sessions, per-app time totals, and observations, each tagged with a person and department. Individually these are anecdotes. The <strong>organization-wide analysis</strong> is a separate, deliberate pass that runs only once the data clears a sufficiency bar — because a pattern seen once is noise, and a recommendation built on noise costs credibility you don't get back.</p>
+
+  <h3>When is there "enough" data?</h3>
+  <ul>
+    <li><strong>Per finding:</strong> a pattern must repeat <strong>3–4 times</strong> before it's promoted from anecdote to confirmed observation — this threshold is already built into the nightly pass.</li>
+    <li><strong>Per person:</strong> a few weeks of recorded sessions, so weekly rituals (the Monday report, the month-end close) have had a chance to recur.</li>
+    <li><strong>Per organization:</strong> multiple people in multiple departments contributing, so app-overlap and shared-chore patterns can be seen <em>across</em> teams — the questions no single person's data can answer.</li>
+  </ul>
+
+  <div class="band">
+    <p class="cap-label">From thousands of rows to one ranked plan</p>
+    <div class="funnel">
+      <div class="layer l1"><b>Raw material</b>Weeks of labeled sessions, observations &amp; app-usage rollups from every machine, in central PostgreSQL</div>
+      <div class="fdown">↓</div>
+      <div class="layer l2"><b>Free aggregation — no AI</b>GROUP BY capability, app, person, department: time totals, recurring rituals, cross-team overlaps</div>
+      <div class="fdown">↓</div>
+      <div class="layer l3"><b>AI synthesis pass</b>Claude reads the aggregates + confirmed observations and drafts typed, priced opportunities</div>
+      <div class="fdown">↓</div>
+      <div class="layer l4"><b>The improvement plan</b>Ranked ledger: automate / integrate / consolidate / build / train / eliminate — each with a dollar figure</div>
+    </div>
+  </div>
+
+  <h3>What only the org-wide pass can see</h3>
+  <p>The nightly per-person analysis finds individual inefficiencies. The ultimate analysis answers the questions that require everyone's data at once:</p>
+  <ul>
+    <li><strong>App consolidation.</strong> Because every session is labeled against the same fixed capability vocabulary, "which apps serve the same function?" becomes a simple query — <em>three departments spend 40 hrs/week on task-tracking across three different paid tools</em> is a license cut you can only see from above.</li>
+    <li><strong>Shared chores.</strong> The same manual ritual appearing on ten machines is not ten small annoyances — it's one internal tool that pays for itself in a month.</li>
+    <li><strong>Department-level friction.</strong> If everyone in accounting ping-pongs between the same two systems, that's an integration priority, not a training issue.</li>
+    <li><strong>Onboarding maps.</strong> Aggregate work summaries show what a role <em>actually</em> spends time on — a ready-made map for training the next hire.</li>
+  </ul>
+
+  <p>Every opportunity in the final plan carries an <strong>estimated minutes-per-week cost measured from real timestamps</strong>, multiplied out by people affected and hourly cost. The output is not "we should automate more" — it's a ranked list of specific changes, each with a defensible dollar figure, sliceable by person and department, ready to hand to whoever owns the budget. From there it repeats: implement the top items, keep recording, and let the next quarterly pass measure whether the minutes actually came back.</p>
+
+  <div class="note gain">
+    <strong>The payoff loop:</strong> capture is free to run, the nightly pass costs cents, and the ultimate analysis is a handful of text calls over already-aggregated data. One confirmed finding — one killed report, one integration, two cut licenses — typically repays the entire pipeline's cost for the year.
+  </div>
+
+  </section>
+
+  <section class="page" id="page-analyze" role="tabpanel" aria-labelledby="tab-analyze">
+
+  <h1>Getting the same analysis for less — the model-cost menu</h1>
+  <p class="dek">The nightly vision read is the one part of this pipeline that costs real money. This page surveys cheaper ways to do that exact job — read a screenshot, emit a taxonomy label + task description + friction flags — at the same accuracy. Nothing here changes how the system works today; it is a menu of options to grow into.</p>
+
+  <h2>First, what does it actually cost today?</h2>
+  <p>Surprisingly little. The pipeline samples only 1–3 representative screenshots per session — roughly 250 images/person/week — because the dedupe and sessioning compress the day before any model sees it. At ~1,850 tokens/image on Claude Haiku 4.5 ($1/M input, $5/M output), that is about <strong>$0.85/person/week</strong>, or ~$0.43 with the Batch API (50% off, and a nightly job is a perfect fit for async batch).</p>
+  <p>So before optimizing, <strong>measure</strong> the real spend of a nightly run. The options below still help — especially multiplied across a fleet — but the starting base is already low.</p>
+
+  <div class="note">
+    These prices are for the <strong>vision model</strong> doing the image reading — a separate model call that is independent of whether the orchestration runs as a scheduled <code>claude -p</code> CLI job or an Agent SDK service. Whatever model does the vision read — Claude via API key included — that part need not involve Claude Code or the SDK at all; it can be a plain script, leaving Claude Code (if used) only the cheap end-of-day text synthesis.
+  </div>
+
+  <h2>The bigger choice hiding here: Claude Code as the engine, or a self-contained script</h2>
+  <p>This is the same fork described in the deployment tab's <a href="#deploy-methods" onclick="showPage('deploy')">two deployment methods</a>, seen from the model side. Claude Code earns its keep by doing the <strong>orchestration</strong>: sampling the day's frames, calling the model, retrying failures, validating the structured label, and handing clean rows to <code>fde_audit ingest</code>. But that orchestration can also live in an ordinary Python script on a schedule — calling the Claude API directly with an org key, or any other model below. The script shape is what makes the rollout light; the model behind it is a separate, swappable decision.</p>
+
+  <div class="band">
+    <p class="cap-label">The same nightly job, two engines — what runs on each PC</p>
+    <div class="duo">
+      <div>
+        <p class="lane-title la">Engine A · Claude Code</p>
+        <div class="lane">
+          <div class="lbox">
+            <h5>Day's frames</h5>
+            <p>Local SQLite vault on the PC</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="lbox t-ana">
+            <span class="tag free">harness does it</span>
+            <h5><code>/analyze-session</code></h5>
+            <p>Sampling, retries, tool-calling, schema validation — free, you write none of it</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="lbox warn-b">
+            <span class="tag risk">fragile link</span>
+            <h5>Claude API via login</h5>
+            <p>Needs Claude Code installed + logged in; unattended auth must survive forever</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="lbox t-ana">
+            <h5><code>fde_audit ingest</code></h5>
+            <p>Central PostgreSQL</p>
+          </div>
+        </div>
+        <p class="lane-foot"><b>On every PC:</b> Claude Code install · per-user login · subscription or org key</p>
+      </div>
+      <div>
+        <p class="lane-title lb-t">Engine B · Self-contained script</p>
+        <div class="lane">
+          <div class="lbox">
+            <h5>Day's frames</h5>
+            <p>Local SQLite vault on the PC</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="lbox t-cap">
+            <span class="tag diy">you build it</span>
+            <h5><code>analyze_session.py</code></h5>
+            <p>Sampling, retries, schema validation, logging — yours to write and maintain</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="lbox t-cap">
+            <span class="tag diy">one org key</span>
+            <h5>Any vision API / local model</h5>
+            <p>Claude via API key, a cheaper hosted model, or a free local one — swappable</p>
+          </div>
+          <div class="arrow">→</div>
+          <div class="lbox t-cap">
+            <h5><code>fde_audit ingest</code></h5>
+            <p>Central PostgreSQL</p>
+          </div>
+        </div>
+        <p class="lane-foot"><b>On every PC:</b> one Python file + a service key — nothing to log into, ever</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="twocol">
+    <div class="col">
+      <h4>Claude Code as the engine</h4>
+      <ul>
+        <li><strong>Orchestration is free.</strong> Frame sampling, retries/backoff, tool-calling, structured-output validation, and the DB write are all handled inside the <code>/analyze-session</code> command — you write almost none of it.</li>
+        <li><strong>One versioned command</strong> is the single source of truth; update once, push to everyone.</li>
+        <li><strong>The cost:</strong> every machine needs Claude Code installed, logged in, and carrying a subscription or org API key — and that unattended auth has to keep working on each PC, forever.</li>
+        <li>The nightly run <em>is</em> Claude — you're renting the harness along with the model.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>A self-contained script (any API model — Claude included — or a local model)</h4>
+      <ul>
+        <li><strong>Dead-simple rollout.</strong> One Python file — grab N frames, call the vision API, write to PostgreSQL — plus a service-account key. Ship it once to every PC; Task Scheduler / cron runs it nightly with <em>no Claude Code, no per-user login, no Claude subscription</em>.</li>
+        <li><strong>Self-contained and durable.</strong> It doesn't depend on Anthropic auth surviving on each machine or on Claude Code being present at all; the employee never has to run or log into anything.</li>
+        <li><strong>The cost:</strong> <em>you</em> now build and maintain everything Claude Code was doing for free — frame sampling, retry logic, JSON-schema validation, error handling, and logging.</li>
+        <li>More upfront engineering, in exchange for a far lighter thing to push to hundreds of machines.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note gain">
+    It isn't all-or-nothing. The common middle ground: a plain script for the high-volume vision reads — the mechanical part that needs no reasoning — while Claude is kept only for the cheap end-of-day synthesis, where its orchestration and judgment actually earn their price. That way you get the clean, subscription-free rollout for the part that runs thousands of times, and pay for the harness only where it adds value.
+  </div>
+
+  <h2>Option A — Call an outside API model</h2>
+  <p>Same architecture as today, just point the vision call at a cheaper hosted model. The trade-off is that screenshots transit a third-party provider, so provider data-retention policy becomes the deciding factor (note: this is already true of Claude today — "raw never leaves the machine" refers to the central database, not the model provider).</p>
+
+  <div class="band">
+    <p class="cap-label">Hosted vision models — rough per-person weekly cost</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>Model</th><th>Access</th><th>Price in / out ($/M)</th><th>~Tokens / 1080p img</th><th>Est. $/person/wk</th><th>With batch</th><th>Screenshot/UI quality</th></tr>
+      <tr><td><strong>Gemini 2.5 Flash-Lite</strong></td><td>Google direct / OpenRouter</td><td>$0.10 / $0.40</td><td>~1,548</td><td>~$0.07</td><td>~$0.04</td><td>Excellent OCR, reliable JSON; weaker on dense multi-column layouts &amp; tiny fonts</td></tr>
+      <tr><td><strong>Qwen3-VL 8B–30B</strong></td><td>OpenRouter / DeepInfra</td><td>~$0.10–0.15 / ~$0.45–0.60</td><td>~2,025</td><td>~$0.10</td><td>— (no batch tier)</td><td>Best of the group at UI/screen understanding — trained on GUI datasets; leads open-model OCR benchmarks</td></tr>
+      <tr><td><strong>GPT-5 nano</strong></td><td>OpenAI</td><td>$0.05 / $0.40</td><td>~1,300–2,000 (verify img multiplier)</td><td>~$0.05–0.15</td><td>~$0.03–0.08</td><td>Adequate; more error-prone on dense screens</td></tr>
+      <tr><td><strong>GPT-5 mini</strong></td><td>OpenAI</td><td>$0.25 / $2.00</td><td>~1,300–2,000</td><td>~$0.25</td><td>~$0.13</td><td>Handles screenshot text reliably</td></tr>
+      <tr><td><strong>Llama 4 Scout</strong></td><td>Groq</td><td>$0.11 / $0.34</td><td>~1,700</td><td>~$0.08</td><td>—</td><td>Weakest at OCR-heavy screens</td></tr>
+      <tr><td><strong>Claude Haiku 4.5 (today's baseline)</strong></td><td>Anthropic</td><td>$1.00 / $5.00</td><td>~1,850</td><td>~$0.85</td><td>~$0.43</td><td>The current bar; strong general accuracy</td></tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="note warn">
+    <strong>Privacy caveats when images leave the machine.</strong>
+    <ul>
+      <li>Never use Gemini's <strong>free</strong> tier — it trains on your data (and free quotas get cut without notice). The paid tier does not train on API data.</li>
+      <li>On OpenRouter, enable the account-wide Zero-Data-Retention / no-train setting so images only route to no-retention providers; never enable prompt logging (it grants commercial-use rights). The downstream provider still receives the image and has its own retention policy.</li>
+      <li>For Qwen via US hosts (DeepInfra, Together), data stays with that host, not Alibaba — DeepInfra is generally no-retention; check each host's ZDR terms.</li>
+      <li>Verify GPT-5 nano's effective per-image token billing empirically — small OpenAI models have historically applied image-token multipliers that erase the headline price advantage.</li>
+    </ul>
+  </div>
+
+  <h2>Option B — Run a model locally on each PC</h2>
+  <p>A free, open vision model running on each employee's own machine. Zero marginal cost, and the strongest possible privacy story — screenshots never leave the device <em>at all</em>, not even to a model provider. A nightly batch of ~50 images tolerates slow CPU inference easily (even 60s/image is ~50 min overnight). Modern small (3–8B) open VLMs are strong at exactly this task shape: closed-taxonomy classification + short description of OCR-heavy screenshots.</p>
+
+  <div class="band">
+    <p class="cap-label">Local open vision models on typical office hardware</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>Model</th><th>Size (Q4)</th><th>RAM to run</th><th>CPU latency / image</th><th>Screen / OCR benchmarks</th><th>Role</th></tr>
+      <tr><td><strong>Qwen3-VL 4B</strong> (Q4_K_M)</td><td>~3.3 GB</td><td>~5–6 GB</td><td>~30–60 s (2–5 s on any GPU)</td><td>ScreenSpot ~90, DocVQA ~91, OCRBench ~85</td><td><strong>Default pick</strong> — best accuracy-per-GB for 16 GB no-GPU machines</td></tr>
+      <tr><td><strong>Qwen3-VL 8B</strong></td><td>~6.1 GB</td><td>~8–9 GB</td><td>~60–120 s</td><td>ScreenSpot 94.4, DocVQA 96.1, OCRBench ~90</td><td>Accuracy ceiling for this hardware class; use where 4B's category errors matter</td></tr>
+      <tr><td><strong>Qwen3-VL 2B</strong></td><td>~1.9 GB</td><td>~4 GB</td><td>faster than 4B</td><td>Weaker OCR/docs</td><td>Fallback for weak 8 GB machines</td></tr>
+      <tr><td><strong>MiniCPM-V 4.x (8B)</strong></td><td>~5–6 GB</td><td>~8 GB</td><td>~60–120 s</td><td>Strong UI understanding; Apache-2.0</td><td>License-clean alternative to Qwen</td></tr>
+      <tr><td><strong>Granite Vision 3.3 (2B, IBM)</strong></td><td>~2 GB</td><td>~4 GB</td><td>fast</td><td>#2 OCRBench among small models; Apache-2.0</td><td>Tiny enterprise-friendly option for docs/charts</td></tr>
+      <tr><td><strong>InternVL 2.5/3.5 (8B)</strong></td><td>~5–6 GB</td><td>~8 GB</td><td>~60–120 s</td><td>Best-in-class for code/UI screenshots</td><td>Strong, but weaker Ollama/llama.cpp support on Windows</td></tr>
+      <tr><td><strong>Moondream 3</strong></td><td>~2 GB active</td><td>~4 GB</td><td>fast</td><td>ScreenSpot ~60, OCRBench ~61</td><td>Fast &amp; cheap, but behind on OCR-dense screens</td></tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="twocol">
+    <div class="col">
+      <h4>Runtime &amp; deployment</h4>
+      <p>Ollama is the pragmatic Windows choice — silent per-user install (no admin), localhost OpenAI-compatible API, binds to localhost only. Push via Intune/SCCM; pre-stage the model (~4 GB for 4B, ~7–8 GB for 8B) from an internal file share rather than 500 machines pulling from the internet. Disable Ollama's auto-updater and version-pin centrally. Add AV/EDR exclusions for the multi-GB model files.</p>
+    </div>
+    <div class="col">
+      <h4>Accuracy &amp; quality control</h4>
+      <p>Constrain decoding (Ollama structured outputs / llama.cpp GBNF grammar) to force output to be exactly one of your ~20 taxonomy labels — eliminates format errors. Expect a small accuracy drop vs Claude, concentrated in confusable adjacent categories and subtle friction cues. You have <strong>free</strong> validation data: run the local model on frames Claude already labeled and measure agreement before trusting it.</p>
+    </div>
+  </div>
+
+  <h2>The orthogonal lever — skip vision for most frames</h2>
+  <p>Independent of which model above you pick, you can cut the number of vision reads dramatically. Most of a screenshot's signal is its <strong>text</strong>, obtainable for free without any vision model:</p>
+  <ul>
+    <li><strong>At capture:</strong> walk the Windows UI Automation (accessibility) tree of the foreground window — control text, dialog detection, full browser URL. Covers ~70–85% of frames in typical office apps. This is how UiPath, screen readers, and Screenpipe (the open-source Rewind alternative — the same architecture as this system) get screen text.</li>
+    <li><strong>Fallback:</strong> Windows' built-in OCR (<code>Windows.Media.Ocr</code>, what PowerToys uses) on frames where the accessibility tree is sparse — ~99% on clean rendered screen text, ~200 ms/frame, zero install.</li>
+    <li><strong>Classify from text:</strong> feed window title + app + URL + extracted text to a cheap text model (Haiku text, Gemini Flash-Lite, or a local Qwen3-4B for $0). A screen's text is ~200–600 tokens vs ~1,850 image tokens — and more information-dense.</li>
+    <li><strong>Escalate only 5–10%</strong> of frames to a real vision read: low-confidence labels, low-text-but-changing screens (dashboards, design tools), suspected stuck states. This cheap-first cascade is a documented production pattern (FrugalGPT: up to 98% cost cut at matched accuracy).</li>
+  </ul>
+  <p>What degrades without vision: capability labels and the repetitive-work flag hold up (repetition detects better from recurring titles/text than from single images); task descriptions stay near parity; the real loss is <strong>non-textual friction</strong> — spinners, frozen screens — which is exactly what the 5–10% escalation is there to catch. Error dialogs are mostly text and survive.</p>
+
+  <div class="note gain">
+    The end state that costs almost nothing: text-first classification (free) with a <strong>local</strong> vision model as the 5–10% escalation tier (free), reserving paid cloud calls — Claude or otherwise — for the org-wide synthesis pass, where real reasoning over aggregated data actually earns its price.
+  </div>
+
+  </section>
+
+  <footer>
+    FDE Audit · capture pipeline v1 · This document describes the system design; the capture stage is built and verified, the analysis stage is the current build target.
+  </footer>
+</div>
+
+<script>
+  function showPage(key) {
+    ['how', 'deploy', 'analyze'].forEach(function (k) {
+      var on = k === key;
+      document.getElementById('page-' + k).classList.toggle('active', on);
+      document.getElementById('tab-' + k).setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    if (history.replaceState) history.replaceState(null, '', '#' + key);
+    window.scrollTo(0, 0);
+  }
+  if (location.hash === '#deploy') showPage('deploy');
+  if (location.hash === '#analyze') showPage('analyze');
+</script>

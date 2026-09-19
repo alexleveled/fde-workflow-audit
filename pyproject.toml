@@ -1,0 +1,33 @@
+[project]
+name = "fde_audit"
+version = "0.1.0"
+description = "FDE Audit — a forward deployed engineer's eyes: watch-yourself-work capture and analysis (Phases 1-5)"
+requires-python = ">=3.12"
+dependencies = [
+    "mss>=10",
+    # Pillow ships cp314 wheels (11.3+); used for JPEG output. If it ever fails
+    # to install, set image.format = "png" in config.toml and mss handles PNG.
+    "pillow>=11.3",
+]
+
+[project.optional-dependencies]
+# Phase 5 (beta) reporting dashboard. Kept optional so the base capture install
+# stays dependency-light; installed clean on cp314 (pydantic-core ships a wheel).
+dashboard = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+fde_audit = "fde_audit.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fde_audit = ["db/schema.sql", "db/migrations/*.sql",
+                      "dashboard/static/*.html", "dashboard/static/*.css", "dashboard/static/*.js", "dashboard/static/*.svg"]
